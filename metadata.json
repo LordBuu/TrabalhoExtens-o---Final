@@ -1,0 +1,7 @@
+{
+  "name": "NeuroEdu",
+  "description": "Plataforma inteligente de apoio pedagógico baseado em evidências científicas para professores do Ensino Médio que atuam com estudantes neurodivergentes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

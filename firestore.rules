@@ -1,0 +1,161 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net - Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'patrickjr2004@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity Validations
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'role']) &&
+             data.keys().hasOnly(['id', 'name', 'email', 'institution', 'subjectArea', 'role', 'createdAt', 'updatedAt']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 254 &&
+             (data.role == 'teacher' || data.role == 'admin') &&
+             (!('institution' in data) || (data.institution is string && data.institution.size() <= 200)) &&
+             (!('subjectArea' in data) || (data.subjectArea is string && data.subjectArea.size() <= 100));
+    }
+
+    function isValidScientificSource(data) {
+      return data.keys().hasAll(['title', 'authors', 'year', 'evidenceLevel', 'neurodivergence']) &&
+             data.keys().hasOnly([
+               'title', 'authors', 'year', 'journal', 'doi', 'url', 'abstract',
+               'keywords', 'neurodivergence', 'ageRange', 'educationalContext',
+               'intervention', 'evidenceLevel', 'content', 'demo', 'createdAt', 'updatedAt'
+             ]) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
+             data.authors is string && data.authors.size() > 0 && data.authors.size() <= 300 &&
+             data.year is number && data.year >= 1950 && data.year <= 2030 &&
+             data.evidenceLevel in [
+               'Revisão sistemática',
+               'Meta-análise',
+               'Ensaio clínico/controlado',
+               'Estudo observacional',
+               'Estudo qualitativo',
+               'Diretriz/consenso',
+               'Revisão narrativa',
+               'Fonte institucional'
+             ] &&
+             data.neurodivergence is string && data.neurodivergence.size() <= 100 &&
+             (!('doi' in data) || (data.doi is string && data.doi.size() <= 120)) &&
+             (!('url' in data) || (data.url is string && data.url.size() <= 500)) &&
+             (!('abstract' in data) || (data.abstract is string && data.abstract.size() <= 4000)) &&
+             (!('keywords' in data) || (data.keywords is list && data.keywords.size() <= 30)) &&
+             (!('content' in data) || (data.content is string && data.content.size() <= 10000));
+    }
+
+    function isValidStrategy(data) {
+      return data.keys().hasAll(['name', 'description', 'situation', 'howToApply']) &&
+             data.keys().hasOnly([
+               'name', 'description', 'targetAudience', 'situation', 'howToApply',
+               'expectedBenefits', 'limitations', 'category', 'referenceIds', 'demo', 'createdAt', 'updatedAt'
+             ]) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.description is string && data.description.size() > 0 && data.description.size() <= 2000 &&
+             data.situation is string && data.situation.size() > 0 && data.situation.size() <= 1500 &&
+             data.howToApply is string && data.howToApply.size() > 0 && data.howToApply.size() <= 4000 &&
+             (!('targetAudience' in data) || (data.targetAudience is string && data.targetAudience.size() <= 200)) &&
+             (!('expectedBenefits' in data) || (data.expectedBenefits is string && data.expectedBenefits.size() <= 1500)) &&
+             (!('limitations' in data) || (data.limitations is string && data.limitations.size() <= 1500)) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100)) &&
+             (!('referenceIds' in data) || (data.referenceIds is list && data.referenceIds.size() <= 20));
+    }
+
+    function isValidQuestion(data) {
+      return data.keys().hasAll(['userId', 'question', 'answer', 'createdAt']) &&
+             data.keys().hasOnly(['userId', 'question', 'answer', 'sources', 'category', 'hasSufficientEvidence', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.question is string && data.question.size() > 0 && data.question.size() <= 3000 &&
+             data.answer is string && data.answer.size() > 0 && data.answer.size() <= 20000 &&
+             (!('sources' in data) || (data.sources is list && data.sources.size() <= 20)) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100));
+    }
+
+    function isValidFavorite(data) {
+      return data.keys().hasAll(['userId', 'itemType', 'itemId', 'title', 'createdAt']) &&
+             data.keys().hasOnly(['userId', 'itemType', 'itemId', 'title', 'snippet', 'category', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.itemType in ['article', 'strategy', 'answer'] &&
+             data.itemId is string && data.itemId.size() <= 128 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
+             (!('snippet' in data) || (data.snippet is string && data.snippet.size() <= 1000)) &&
+             (!('category' in data) || (data.category is string && data.category.size() <= 100));
+    }
+
+    // Rules for /users/{userId}
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && (incoming().role == 'teacher' || isAdmin());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && incoming().id == existing().id && (incoming().role == existing().role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Rules for /scientific_sources/{sourceId}
+    match /scientific_sources/{sourceId} {
+      allow get, list: if isSignedIn();
+      allow create: if isAdmin() && isValidScientificSource(incoming());
+      allow update: if isAdmin() && isValidScientificSource(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Rules for /strategies/{strategyId}
+    match /strategies/{strategyId} {
+      allow get, list: if isSignedIn();
+      allow create: if isAdmin() && isValidStrategy(incoming());
+      allow update: if isAdmin() && isValidStrategy(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Rules for /questions/{questionId}
+    match /questions/{questionId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidQuestion(incoming());
+      allow update: if false; // Questions are immutable records
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Rules for /favorites/{favoriteId}
+    match /favorites/{favoriteId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidFavorite(incoming());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && incoming().userId == existing().userId && isValidFavorite(incoming());
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Admin collection for role validation
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+  }
+}
